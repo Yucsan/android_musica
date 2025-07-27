@@ -18,6 +18,7 @@ import androidx.media3.session.MediaSession
 import com.yucsan.musica2.MainActivity
 import com.yucsan.musica2.R
 import com.yucsan.musica2.modelo.Song
+import com.yucsan.musica2.modelo.uri
 
 class MusicService : Service() {
 

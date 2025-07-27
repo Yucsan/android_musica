@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import com.yucsan.musica2.modelo.Song
-import com.yucsan.musica2.servicio.HybridMusicService
+import com.yucsan.musica2.service.JamendoService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -23,10 +23,20 @@ class MusicViewModel @Inject constructor(
         private const val TAG = "MusicViewModel"
     }
 
-    // Servicio híbrido
-    private val hybridMusicService = HybridMusicService.getInstance(context)
+    // ============================================================================
+    // SERVICIOS
+    // ============================================================================
 
-    // Estados UI
+    // Jamendo como servicio principal
+    private val jamendoService = JamendoService.getInstance()
+
+    // Tu MusicPlayer actual
+    private var musicPlayer: com.yucsan.musica2.servicio.MusicPlayer? = null
+
+    // ============================================================================
+    // ESTADOS UI
+    // ============================================================================
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -52,12 +62,29 @@ class MusicViewModel @Inject constructor(
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
 
-    // Tu MusicPlayer actual
-    private var musicPlayer: com.yucsan.musica2.servicio.MusicPlayer? = null
+    // ============================================================================
+    // GÉNEROS DISPONIBLES
+    // ============================================================================
+
+    private val _availableGenres = MutableStateFlow<List<String>>(emptyList())
+    val availableGenres: StateFlow<List<String>> = _availableGenres.asStateFlow()
+
+    private val _selectedGenre = MutableStateFlow<String?>(null)
+    val selectedGenre: StateFlow<String?> = _selectedGenre.asStateFlow()
+
+    // ============================================================================
+    // PLAYLIST ACTUAL (para next/previous)
+    // ============================================================================
+
+    private val _currentPlaylist = MutableStateFlow<List<Song>>(emptyList())
+    val currentPlaylist: StateFlow<List<Song>> = _currentPlaylist.asStateFlow()
+
+    private val _currentSongIndex = MutableStateFlow(-1)
+    val currentSongIndex: StateFlow<Int> = _currentSongIndex.asStateFlow()
 
     init {
         initializeServices()
-        loadTrendingSongs()
+        loadInitialContent()
     }
 
     /**
@@ -89,35 +116,36 @@ class MusicViewModel @Inject constructor(
     }
 
     /**
-     * Inicializar servicios con debugging detallado
+     * Inicializar servicios con Jamendo
      */
     private fun initializeServices() {
         viewModelScope.launch {
             try {
                 _isLoading.value = true
-                _debugInfo.value = "🚀 Inicializando servicios..."
-                Log.d(TAG, "🚀 Inicializando servicios...")
+                _debugInfo.value = "🚀 Inicializando Jamendo..."
+                Log.d(TAG, "🚀 Inicializando servicios Jamendo...")
 
-                // Inicializar servicio híbrido
-                val initialized = hybridMusicService.initialize()
-                _isInitialized.value = initialized
+                // Test de conectividad Jamendo
+                val jamendoWorking = jamendoService.testConnection()
 
-                if (initialized) {
-                    Log.d(TAG, "✅ Servicios inicializados correctamente")
-                    _debugInfo.value = "✅ Servicios inicializados"
-
-                    // Test rápido de búsqueda
-                    testYouTubeConnection()
+                if (jamendoWorking) {
+                    Log.d(TAG, "✅ Jamendo conectado correctamente")
+                    _debugInfo.value = "✅ Jamendo conectado"
+                    _isInitialized.value = true
                 } else {
-                    Log.w(TAG, "⚠️ Inicialización parcial")
-                    _debugInfo.value = "⚠️ Usando modo demo"
-                    _errorMessage.value = "Servicios en modo demo"
+                    Log.w(TAG, "⚠️ Jamendo en modo demo")
+                    _debugInfo.value = "⚠️ Jamendo en modo demo"
+                    _isInitialized.value = true // Aún así permitir usar demos
                 }
+
+                // Cargar géneros disponibles
+                loadGenres()
 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Error inicializando servicios", e)
                 _errorMessage.value = "Error inicializando: ${e.message}"
                 _debugInfo.value = "❌ Error: ${e.message}"
+                _isInitialized.value = false
             } finally {
                 _isLoading.value = false
             }
@@ -125,50 +153,63 @@ class MusicViewModel @Inject constructor(
     }
 
     /**
-     * Test de conexión a YouTube
+     * Cargar géneros disponibles
      */
-    private suspend fun testYouTubeConnection() {
-        try {
-            _debugInfo.value = "🧪 Probando conexión YouTube..."
+    private fun loadGenres() {
+        viewModelScope.launch {
+            try {
+                val genres = jamendoService.getAvailableGenres()
+                _availableGenres.value = genres
+                Log.d(TAG, "📂 Géneros cargados: ${genres.size}")
 
-            val stats = hybridMusicService.getServiceStats()
-            Log.d(TAG, "📊 Stats: $stats")
+                // Seleccionar "rock" por defecto
+                if (genres.isNotEmpty() && _selectedGenre.value == null) {
+                    _selectedGenre.value = "rock"
+                }
 
-            val connectivity = stats["connectivity"] as? Map<String, Boolean>
-            val newPipeWorking = connectivity?.get("NewPipe") ?: false
-
-            if (newPipeWorking) {
-                _debugInfo.value = "✅ YouTube conectado vía NewPipe"
-
-                // Test de búsqueda real
-                Log.d(TAG, "🔍 Test de búsqueda: 'piano music'")
-                hybridMusicService.searchSongsFlow("piano music")
-                    .collect { songs ->
-                        if (songs.isNotEmpty() && songs.first().id != "demo1") {
-                            _debugInfo.value = "✅ YouTube funcionando - ${songs.size} resultados reales"
-                            Log.d(TAG, "✅ Búsqueda real exitosa: ${songs.size} resultados")
-                        } else {
-                            _debugInfo.value = "⚠️ Solo resultados demo disponibles"
-                            Log.w(TAG, "⚠️ Solo demos disponibles")
-                        }
-                    }
-            } else {
-                _debugInfo.value = "❌ YouTube no conectado"
-                Log.w(TAG, "❌ NewPipe no funciona")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cargando géneros", e)
             }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error en test YouTube", e)
-            _debugInfo.value = "❌ Test falló: ${e.message}"
         }
     }
 
     /**
-     * Buscar canciones con debugging detallado
+     * Cargar contenido inicial
+     */
+    private fun loadInitialContent() {
+        viewModelScope.launch {
+            try {
+                _debugInfo.value = "📈 Cargando música destacada..."
+
+                // Cargar música destacada de Jamendo
+                val featuredTracks = jamendoService.getFeaturedTracks()
+                _trendingSongs.value = featuredTracks
+                _currentPlaylist.value = featuredTracks
+
+                val isRealContent = featuredTracks.isNotEmpty() && !featuredTracks.first().id.startsWith("demo")
+
+                if (isRealContent) {
+                    _debugInfo.value = "📈 Música destacada cargada (${featuredTracks.size} de Jamendo)"
+                    Log.d(TAG, "📈 Featured real: ${featuredTracks.size}")
+                } else {
+                    _debugInfo.value = "📈 Demos cargados (${featuredTracks.size})"
+                    Log.d(TAG, "📈 Featured demo: ${featuredTracks.size}")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error cargando contenido inicial", e)
+                _debugInfo.value = "❌ Error cargando contenido: ${e.message}"
+            }
+        }
+    }
+
+    /**
+     * Buscar canciones en Jamendo
      */
     fun searchSongs(query: String) {
         if (query.isBlank()) {
             _searchResults.value = emptyList()
+            _currentPlaylist.value = _trendingSongs.value
             return
         }
 
@@ -176,37 +217,31 @@ class MusicViewModel @Inject constructor(
             try {
                 _isLoading.value = true
                 _errorMessage.value = null
-                _debugInfo.value = "🔍 Buscando: '$query'"
+                _debugInfo.value = "🔍 Buscando en Jamendo: '$query'"
 
-                Log.d(TAG, "🔍 Búsqueda iniciada: $query")
+                Log.d(TAG, "🔍 Búsqueda Jamendo: $query")
 
-                var resultCount = 0
-                var isRealResults = false
+                val results = jamendoService.searchTracks(query)
+                _searchResults.value = results
+                _currentPlaylist.value = results
 
-                hybridMusicService.searchSongsFlow(query)
-                    .collect { songs ->
-                        _searchResults.value = songs
-                        resultCount = songs.size
+                val isRealResults = results.isNotEmpty() && !results.first().id.startsWith("demo")
 
-                        // Verificar si son resultados reales o demos
-                        isRealResults = songs.isNotEmpty() && !songs.first().id.startsWith("demo")
+                if (isRealResults) {
+                    _debugInfo.value = "✅ Encontrados ${results.size} resultados de Jamendo"
+                    Log.d(TAG, "✅ Resultados reales: ${results.size}")
 
-                        if (isRealResults) {
-                            _debugInfo.value = "✅ Encontrados $resultCount resultados de YouTube"
-                            Log.d(TAG, "✅ Resultados reales: $resultCount")
-
-                            // Log de los primeros resultados
-                            songs.take(3).forEach { song ->
-                                Log.d(TAG, "   🎵 ${song.title} - ${song.artist}")
-                            }
-                        } else if (songs.isNotEmpty()) {
-                            _debugInfo.value = "⚠️ Solo demos disponibles ($resultCount)"
-                            Log.w(TAG, "⚠️ Solo demos: $resultCount")
-                        } else {
-                            _debugInfo.value = "❌ Sin resultados para '$query'"
-                            Log.w(TAG, "❌ Sin resultados")
-                        }
+                    // Log de los primeros resultados
+                    results.take(3).forEach { song ->
+                        Log.d(TAG, "   🎵 ${song.title} - ${song.artist}")
                     }
+                } else if (results.isNotEmpty()) {
+                    _debugInfo.value = "⚠️ Solo demos disponibles (${results.size})"
+                    Log.w(TAG, "⚠️ Solo demos: ${results.size}")
+                } else {
+                    _debugInfo.value = "❌ Sin resultados para '$query'"
+                    Log.w(TAG, "❌ Sin resultados")
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Error en búsqueda", e)
@@ -220,7 +255,43 @@ class MusicViewModel @Inject constructor(
     }
 
     /**
-     * Reproducir canción con debugging detallado
+     * Buscar por género
+     */
+    fun searchByGenre(genre: String) {
+        viewModelScope.launch {
+            try {
+                _isLoading.value = true
+                _selectedGenre.value = genre
+                _debugInfo.value = "🎵 Cargando género: $genre"
+
+                Log.d(TAG, "🎵 Búsqueda por género: $genre")
+
+                val results = jamendoService.getTracksByGenre(genre)
+                _searchResults.value = results
+                _currentPlaylist.value = results
+
+                val isRealResults = results.isNotEmpty() && !results.first().id.startsWith("demo")
+
+                if (isRealResults) {
+                    _debugInfo.value = "✅ Género '$genre': ${results.size} canciones"
+                    Log.d(TAG, "✅ Género real: ${results.size}")
+                } else {
+                    _debugInfo.value = "⚠️ Género '$genre': demos (${results.size})"
+                    Log.w(TAG, "⚠️ Género demo: ${results.size}")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error búsqueda por género", e)
+                _errorMessage.value = "Error cargando género: ${e.message}"
+                _debugInfo.value = "❌ Error género: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Reproducir canción con soporte para playlist
      */
     fun playSong(song: Song) {
         viewModelScope.launch {
@@ -243,46 +314,23 @@ class MusicViewModel @Inject constructor(
                 if (!player.isServiceReady()) {
                     _debugInfo.value = "⏳ Esperando MusicService..."
                     Log.w(TAG, "⏳ MusicService no está listo, esperando...")
-                    delay(1000) // Dar tiempo para conectar
+                    delay(1000)
                 }
 
-                // Verificar si es demo o real
-                if (song.id.startsWith("demo")) {
-                    Log.d(TAG, "🎧 Reproduciendo demo")
-                    _debugInfo.value = "🎧 Reproduciendo demo: ${song.title}"
-
-                    // Para demos, usar el método directo
-                    _currentSong.value = song
-                    player.playSong(song)
-                    _isPlaying.value = true
-
-                } else {
-                    Log.d(TAG, "🔍 Obteniendo stream de YouTube para: ${song.id}")
-                    _debugInfo.value = "🔍 Obteniendo stream de YouTube..."
-
-                    // Obtener URL de stream de YouTube
-                    val streamUrl = hybridMusicService.getAudioStreamUrl(song.id)
-
-                    if (streamUrl.isNullOrBlank()) {
-                        _errorMessage.value = "No se pudo obtener stream para '${song.title}'"
-                        _debugInfo.value = "❌ Stream no disponible"
-                        Log.w(TAG, "❌ No se obtuvo stream para: ${song.id}")
-                        return@launch
-                    }
-
-                    Log.d(TAG, "✅ Stream obtenido: ${streamUrl.take(50)}...")
-                    _debugInfo.value = "✅ Stream obtenido, iniciando reproducción"
-
-                    // Actualizar canción con URL de stream
-                    val updatedSong = song.copy(audioUrl = streamUrl)
-                    _currentSong.value = updatedSong
-
-                    // Reproducir usando playFromUrlWithRetry para mejor confiabilidad
-                    player.playFromUrlWithRetry(streamUrl, song.title)
-                    _isPlaying.value = true
-                    _debugInfo.value = "▶️ Reproduciendo: ${song.title}"
-                    Log.d(TAG, "▶️ Reproducción iniciada")
+                // Actualizar índice en playlist
+                val currentPlaylist = _currentPlaylist.value
+                val songIndex = currentPlaylist.indexOfFirst { it.id == song.id }
+                if (songIndex >= 0) {
+                    _currentSongIndex.value = songIndex
                 }
+
+                // Reproducir canción
+                _currentSong.value = song
+                player.playSong(song)
+                _isPlaying.value = true
+
+                _debugInfo.value = "▶️ Reproduciendo: ${song.title}"
+                Log.d(TAG, "▶️ Reproducción iniciada")
 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Error reproduciendo canción", e)
@@ -291,37 +339,6 @@ class MusicViewModel @Inject constructor(
                 _isPlaying.value = false
             } finally {
                 _isLoading.value = false
-            }
-        }
-    }
-
-    /**
-     * Cargar trending con debugging
-     */
-    private fun loadTrendingSongs() {
-        viewModelScope.launch {
-            try {
-                Log.d(TAG, "📈 Cargando trending...")
-                _debugInfo.value = "📈 Cargando trending..."
-
-                hybridMusicService.getTrendingSongsFlow()
-                    .collect { songs ->
-                        _trendingSongs.value = songs
-
-                        val isRealTrending = songs.isNotEmpty() && !songs.first().id.startsWith("demo")
-
-                        if (isRealTrending) {
-                            _debugInfo.value = "📈 Trending real cargado (${songs.size})"
-                            Log.d(TAG, "📈 Trending real: ${songs.size}")
-                        } else {
-                            _debugInfo.value = "📈 Trending demo (${songs.size})"
-                            Log.d(TAG, "📈 Trending demo: ${songs.size}")
-                        }
-                    }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Error cargando trending", e)
-                _debugInfo.value = "❌ Error trending: ${e.message}"
             }
         }
     }
@@ -351,6 +368,52 @@ class MusicViewModel @Inject constructor(
     }
 
     /**
+     * Siguiente canción en playlist
+     */
+    fun nextSong() {
+        val currentPlaylist = _currentPlaylist.value
+        val currentIndex = _currentSongIndex.value
+
+        if (currentPlaylist.isNotEmpty() && currentIndex >= 0) {
+            val nextIndex = if (currentIndex < currentPlaylist.size - 1) {
+                currentIndex + 1
+            } else {
+                0 // Volver al inicio
+            }
+
+            val nextSong = currentPlaylist[nextIndex]
+            playSong(nextSong)
+            Log.d(TAG, "⏭️ Siguiente: ${nextSong.title}")
+        } else {
+            _errorMessage.value = "No hay siguiente canción"
+            Log.w(TAG, "⏭️ No hay siguiente canción")
+        }
+    }
+
+    /**
+     * Canción anterior en playlist
+     */
+    fun previousSong() {
+        val currentPlaylist = _currentPlaylist.value
+        val currentIndex = _currentSongIndex.value
+
+        if (currentPlaylist.isNotEmpty() && currentIndex >= 0) {
+            val previousIndex = if (currentIndex > 0) {
+                currentIndex - 1
+            } else {
+                currentPlaylist.size - 1 // Ir al final
+            }
+
+            val previousSong = currentPlaylist[previousIndex]
+            playSong(previousSong)
+            Log.d(TAG, "⏮️ Anterior: ${previousSong.title}")
+        } else {
+            _errorMessage.value = "No hay canción anterior"
+            Log.w(TAG, "⏮️ No hay canción anterior")
+        }
+    }
+
+    /**
      * Parar reproducción
      */
     fun stopPlayback() {
@@ -359,6 +422,7 @@ class MusicViewModel @Inject constructor(
             player.stop()
             _isPlaying.value = false
             _currentSong.value = null
+            _currentSongIndex.value = -1
             _debugInfo.value = "⏹️ Detenido"
             Log.d(TAG, "⏹️ Reproducción detenida")
         }
@@ -373,13 +437,11 @@ class MusicViewModel @Inject constructor(
                 _isLoading.value = true
                 _debugInfo.value = "🧪 Probando servicios..."
 
-                val results = hybridMusicService.testAllServices()
+                val jamendoWorking = jamendoService.testConnection()
 
                 val message = buildString {
                     appendLine("🧪 Test de servicios:")
-                    results.forEach { (service, working) ->
-                        appendLine("• $service: ${if (working) "✅ OK" else "❌ Error"}")
-                    }
+                    appendLine("• Jamendo: ${if (jamendoWorking) "✅ OK" else "❌ Demo"}")
                     appendLine()
                     appendLine("🎵 MusicPlayer:")
                     val player = musicPlayer
@@ -389,6 +451,11 @@ class MusicViewModel @Inject constructor(
                     } else {
                         appendLine("• Conectado: ❌")
                     }
+                    appendLine()
+                    appendLine("📊 Estadísticas:")
+                    appendLine("• Trending: ${_trendingSongs.value.size}")
+                    appendLine("• Búsqueda: ${_searchResults.value.size}")
+                    appendLine("• Géneros: ${_availableGenres.value.size}")
                 }
 
                 _debugInfo.value = message.trim()
@@ -401,6 +468,15 @@ class MusicViewModel @Inject constructor(
                 _isLoading.value = false
             }
         }
+    }
+
+    /**
+     * Limpiar búsqueda y volver a trending
+     */
+    fun clearSearch() {
+        _searchResults.value = emptyList()
+        _currentPlaylist.value = _trendingSongs.value
+        _debugInfo.value = "📈 Mostrando música destacada"
     }
 
     /**
@@ -420,6 +496,6 @@ class MusicViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         Log.d(TAG, "🧹 Limpiando ViewModel...")
-        hybridMusicService.cleanup()
+        // Jamendo service no necesita cleanup especial
     }
 }

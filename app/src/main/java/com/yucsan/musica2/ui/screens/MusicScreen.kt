@@ -2,6 +2,7 @@ package com.yucsan.musica2.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,6 +16,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yucsan.musica2.modelo.Song
+import com.yucsan.musica2.modelo.getFormattedDuration
 import com.yucsan.musica2.viewmodel.MusicViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -23,7 +25,7 @@ fun MusicScreen(
     modifier: Modifier = Modifier,
     viewModel: MusicViewModel
 ) {
-    // Estados del nuevo ViewModel
+    // Estados del ViewModel
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
     val trendingSongs by viewModel.trendingSongs.collectAsStateWithLifecycle()
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
@@ -32,8 +34,10 @@ fun MusicScreen(
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val debugInfo by viewModel.debugInfo.collectAsStateWithLifecycle()
     val isInitialized by viewModel.isInitialized.collectAsStateWithLifecycle()
+    val availableGenres by viewModel.availableGenres.collectAsStateWithLifecycle()
+    val selectedGenre by viewModel.selectedGenre.collectAsStateWithLifecycle()
 
-    // Estado local para búsqueda
+    // Estado local
     var searchQuery by remember { mutableStateOf("") }
     var showDebugPanel by remember { mutableStateOf(true) }
 
@@ -47,79 +51,15 @@ fun MusicScreen(
     Column(modifier = modifier.fillMaxSize()) {
 
         // ============================================================================
-        // PANEL DE DEBUG OPCIONAL (se puede ocultar)
+        // PANEL DE DEBUG OPCIONAL
         // ============================================================================
         if (showDebugPanel && (debugInfo.isNotEmpty() || !isInitialized)) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isInitialized)
-                        MaterialTheme.colorScheme.surfaceVariant
-                    else
-                        MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (isInitialized) "🔧 Debug" else "⚠️ Estado",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        Row {
-                            TextButton(
-                                onClick = { viewModel.testServices() }
-                            ) {
-                                Text("Test", style = MaterialTheme.typography.labelSmall)
-                            }
-                            IconButton(
-                                onClick = { showDebugPanel = false },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Cerrar debug",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    if (debugInfo.isNotEmpty()) {
-                        Text(
-                            text = debugInfo,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-
-                    // Indicador de estado
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isInitialized) Icons.Default.CheckCircle else Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = if (isInitialized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isInitialized) "Servicios listos" else "Modo demo",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                }
-            }
+            DebugPanel(
+                debugInfo = debugInfo,
+                isInitialized = isInitialized,
+                onTest = { viewModel.testServices() },
+                onClose = { showDebugPanel = false }
+            )
         }
 
         // Botón para mostrar debug si está oculto
@@ -128,29 +68,23 @@ fun MusicScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(
-                    onClick = { showDebugPanel = true }
-                ) {
-                    Icon(
-                        Icons.Default.BugReport,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
+                TextButton(onClick = { showDebugPanel = true }) {
+                    Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Debug", style = MaterialTheme.typography.labelSmall)
                 }
-
                 Text(
-                    text = if (isInitialized) "✅" else "⚠️",
+                    text = "🎵 Jamendo ${if (isInitialized) "✅" else "⚠️"}",
                     style = MaterialTheme.typography.labelMedium
                 )
             }
         }
 
         // ============================================================================
-        // BARRA DE BÚSQUEDA (tu diseño original)
+        // BARRA DE BÚSQUEDA
         // ============================================================================
         SearchBar(
             query = searchQuery,
@@ -158,6 +92,8 @@ fun MusicScreen(
                 searchQuery = newQuery
                 if (newQuery.isNotBlank()) {
                     viewModel.searchSongs(newQuery)
+                } else {
+                    viewModel.clearSearch()
                 }
             },
             modifier = Modifier
@@ -166,77 +102,42 @@ fun MusicScreen(
         )
 
         // ============================================================================
-        // CONTADOR DE CANCIONES (tu diseño original)
+        // FILTROS DE GÉNERO
         // ============================================================================
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (searchResults.isNotEmpty()) {
-                    "🔍 Resultados: ${searchResults.size}"
-                } else if (trendingSongs.isNotEmpty()) {
-                    "📈 Trending: ${trendingSongs.size}"
-                } else {
-                    "Canciones: 0"
+        if (availableGenres.isNotEmpty() && searchQuery.isBlank()) {
+            GenreFilterRow(
+                genres = availableGenres,
+                selectedGenre = selectedGenre,
+                onGenreSelected = { genre ->
+                    viewModel.searchByGenre(genre)
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
-
-            // Indicador de tipo de contenido
-            if (songsToShow.isNotEmpty()) {
-                val isRealContent = !songsToShow.first().id.startsWith("demo")
-                Text(
-                    text = if (isRealContent) "📺 YouTube" else "🎧 Demo",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isRealContent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                )
-            }
         }
+
+        // ============================================================================
+        // INFORMACIÓN DE CONTENIDO
+        // ============================================================================
+        ContentInfoRow(
+            searchResults = searchResults,
+            trendingSongs = trendingSongs,
+            songsToShow = songsToShow,
+            searchQuery = searchQuery,
+            selectedGenre = selectedGenre,
+            onClearSearch = {
+                searchQuery = ""
+                viewModel.clearSearch()
+            }
+        )
 
         // ============================================================================
         // MENSAJES DE ERROR
         // ============================================================================
         errorMessage?.let { error ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Error,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = { viewModel.clearError() },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Cerrar",
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
+            ErrorCard(
+                errorMessage = error,
+                onDismiss = { viewModel.clearError() }
+            )
         }
 
         // ============================================================================
@@ -247,93 +148,41 @@ fun MusicScreen(
         }
 
         // ============================================================================
-        // LISTA DE CANCIONES (tu diseño original mejorado)
+        // CONTENIDO PRINCIPAL
         // ============================================================================
-        if (isLoading) {
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Cargando música...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
+        when {
+            isLoading -> {
+                LoadingContent()
             }
-        } else if (songsToShow.isEmpty()) {
-            // Estado vacío
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.outline
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = if (searchQuery.isBlank()) {
-                            "Busca música para comenzar"
-                        } else {
-                            "No se encontraron resultados para '$searchQuery'"
-                        },
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                    if (searchQuery.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        TextButton(
-                            onClick = {
-                                searchQuery = ""
-                                viewModel.clearError()
-                            }
-                        ) {
-                            Text("Limpiar búsqueda")
-                        }
+            songsToShow.isEmpty() -> {
+                EmptyContent(
+                    searchQuery = searchQuery,
+                    onClearSearch = {
+                        searchQuery = ""
+                        viewModel.clearSearch()
                     }
-                }
+                )
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(songsToShow) { song ->
-                    SongItem(
-                        song = song,
-                        isCurrentSong = song.id == currentSong?.id,
-                        onClick = { viewModel.playSong(song) }
-                    )
-                }
-
-                // Espaciado para el mini player
-                item {
-                    Spacer(modifier = Modifier.height(80.dp))
-                }
+            else -> {
+                SongsList(
+                    songs = songsToShow,
+                    currentSong = currentSong,
+                    onSongClick = { song -> viewModel.playSong(song) },
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
         // ============================================================================
-        // MINI PLAYER (tu diseño original mejorado)
+        // MINI PLAYER
         // ============================================================================
         currentSong?.let { song ->
             MiniPlayer(
                 song = song,
                 isPlaying = isPlaying,
                 onPlayPause = { viewModel.togglePlayPause() },
-                onNext = { /* implementar si tienes next */ },
-                onPrevious = { /* implementar si tienes previous */ },
+                onNext = { viewModel.nextSong() },
+                onPrevious = { viewModel.previousSong() },
                 onStop = { viewModel.stopPlayback() }
             )
         }
@@ -341,8 +190,323 @@ fun MusicScreen(
 }
 
 // ============================================================================
-// COMPONENTES AUXILIARES (tu diseño original)
+// COMPONENTES AUXILIARES
 // ============================================================================
+
+@Composable
+fun DebugPanel(
+    debugInfo: String,
+    isInitialized: Boolean,
+    onTest: () -> Unit,
+    onClose: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isInitialized)
+                MaterialTheme.colorScheme.surfaceVariant
+            else
+                MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isInitialized) "🔧 Debug Jamendo" else "⚠️ Estado",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Row {
+                    TextButton(onClick = onTest) {
+                        Text("Test", style = MaterialTheme.typography.labelSmall)
+                    }
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Cerrar debug",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            if (debugInfo.isNotEmpty()) {
+                Text(
+                    text = debugInfo,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+
+            // Indicador de estado
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                Icon(
+                    imageVector = if (isInitialized) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (isInitialized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (isInitialized) "Jamendo conectado" else "Modo demo",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun GenreFilterRow(
+    genres: List<String>,
+    selectedGenre: String?,
+    onGenreSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = "🎵 Géneros",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = 4.dp)
+        ) {
+            // Botón "Todos" para limpiar género
+            item {
+                FilterChip(
+                    onClick = { onGenreSelected("featured") },
+                    label = { Text("Destacado") },
+                    selected = selectedGenre == null || selectedGenre == "featured",
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Star,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
+            }
+
+            items(genres) { genre ->
+                FilterChip(
+                    onClick = { onGenreSelected(genre) },
+                    label = { Text(genre.capitalize()) },
+                    selected = selectedGenre == genre
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ContentInfoRow(
+    searchResults: List<Song>,
+    trendingSongs: List<Song>,
+    songsToShow: List<Song>,
+    searchQuery: String,
+    selectedGenre: String?,
+    onClearSearch: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = when {
+                searchResults.isNotEmpty() -> "🔍 Resultados: ${searchResults.size}"
+                selectedGenre != null && selectedGenre != "featured" -> "🎵 Género '$selectedGenre': ${songsToShow.size}"
+                trendingSongs.isNotEmpty() -> "📈 Destacado: ${trendingSongs.size}"
+                else -> "Canciones: 0"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Indicador de fuente
+            if (songsToShow.isNotEmpty()) {
+                val isRealContent = !songsToShow.first().id.startsWith("demo")
+                Text(
+                    text = if (isRealContent) "🎵 Jamendo" else "🎧 Demo",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isRealContent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                )
+            }
+
+            // Botón limpiar búsqueda
+            if (searchQuery.isNotBlank() || (selectedGenre != null && selectedGenre != "featured")) {
+                TextButton(
+                    onClick = onClearSearch,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Clear,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Limpiar", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ErrorCard(
+    errorMessage: String,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Error,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = errorMessage,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Cerrar",
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun LoadingContent() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Cargando música de Jamendo...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+    }
+}
+
+@Composable
+fun EmptyContent(
+    searchQuery: String,
+    onClearSearch: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                Icons.Default.MusicNote,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.outline
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = if (searchQuery.isBlank()) {
+                    "Busca música libre en Jamendo"
+                } else {
+                    "No se encontraron resultados para '$searchQuery'"
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Prueba con géneros como 'rock', 'electronic', 'jazz'",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            if (searchQuery.isNotBlank()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                TextButton(onClick = onClearSearch) {
+                    Text("Limpiar búsqueda")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SongsList(
+    songs: List<Song>,
+    currentSong: Song?,
+    onSongClick: (Song) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        items(songs) { song ->
+            SongItem(
+                song = song,
+                isCurrentSong = song.id == currentSong?.id,
+                onClick = { onSongClick(song) }
+            )
+        }
+
+        // Espaciado para el mini player
+        item {
+            Spacer(modifier = Modifier.height(80.dp))
+        }
+    }
+}
 
 @Composable
 fun SearchBar(
@@ -353,8 +517,8 @@ fun SearchBar(
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        label = { Text("Buscar música en YouTube") },
-        placeholder = { Text("Ej: imagine dragons, piano music...") },
+        label = { Text("Buscar música libre en Jamendo") },
+        placeholder = { Text("Ej: piano music, electronic, jazz...") },
         leadingIcon = {
             Icon(
                 imageVector = Icons.Default.Search,
@@ -414,13 +578,13 @@ fun SongItem(
                 // Indicador del tipo de fuente
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier.padding(top = 4.dp)
                 ) {
                     Icon(
                         imageVector = if (song.id.startsWith("demo"))
                             Icons.Default.Audiotrack
                         else
-                            Icons.Default.OndemandVideo,
+                            Icons.Default.LibraryMusic,
                         contentDescription = null,
                         modifier = Modifier.size(12.dp),
                         tint = if (song.id.startsWith("demo"))
@@ -430,7 +594,7 @@ fun SongItem(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = if (song.id.startsWith("demo")) "Demo" else "YouTube",
+                        text = if (song.id.startsWith("demo")) "Demo" else "Jamendo",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (song.id.startsWith("demo"))
                             MaterialTheme.colorScheme.outline
@@ -448,6 +612,7 @@ fun SongItem(
                 )
 
                 if (isCurrentSong) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = "Reproduciendo",
@@ -478,38 +643,93 @@ fun MiniPlayer(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = song.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = song.artist,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Row {
-                IconButton(onClick = onPlayPause) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pausar" else "Reproducir"
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Información de la canción
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = song.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    Text(
+                        text = song.artist,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    // Indicador de fuente
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (song.id.startsWith("demo"))
+                                Icons.Default.Audiotrack
+                            else
+                                Icons.Default.LibraryMusic,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (song.id.startsWith("demo")) "Demo" else "Jamendo",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
-                IconButton(onClick = onStop) {
-                    Icon(Icons.Default.Stop, contentDescription = "Parar")
+
+                // Controles de reproducción
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(onClick = onPrevious) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Anterior"
+                        )
+                    }
+
+                    FilledIconButton(
+                        onClick = onPlayPause,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pausar" else "Reproducir"
+                        )
+                    }
+
+                    IconButton(onClick = onNext) {
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Siguiente"
+                        )
+                    }
+
+                    // Botón stop opcional
+                    IconButton(
+                        onClick = onStop,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Stop,
+                            contentDescription = "Parar",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }
