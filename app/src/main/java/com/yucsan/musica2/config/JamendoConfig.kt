@@ -1,19 +1,27 @@
 package com.yucsan.musica2.config
 
+import com.yucsan.musica2.BuildConfig
+
 /**
- * Configuración centralizada para Jamendo API
+ * Configuración centralizada para Jamendo API - VERSIÓN SEGURA
  */
 object JamendoConfig {
 
     // ============================================================================
-    // API CONFIGURATION
+    // API CONFIGURATION - AHORA SEGURA
     // ============================================================================
 
     const val BASE_URL = "https://api.jamendo.com/v3.0/"
 
-    // ⚠️ IMPORTANTE: Reemplaza con tu API key real de Jamendo
-    // Obtén tu API key gratis en: https://developer.jamendo.com/
-    const val API_KEY = "c6808c99" // ← Pon tu API key aquí
+    // ✅ API KEY AHORA VIENE DE BuildConfig (definida en build.gradle)
+    val API_KEY: String = BuildConfig.JAMENDO_API_KEY
+
+    init {
+        // Debug logging para verificar que se lea correctamente
+        android.util.Log.d("JamendoConfig", "🔧 INIT - API Key desde BuildConfig: '$API_KEY'")
+        android.util.Log.d("JamendoConfig", "🔧 INIT - API Key length: ${API_KEY.length}")
+        android.util.Log.d("JamendoConfig", "🔧 INIT - BuildConfig class: ${BuildConfig.JAMENDO_API_KEY}")
+    }
 
     // Límites de resultados
     const val DEFAULT_SEARCH_LIMIT = 20
@@ -176,9 +184,10 @@ object JamendoConfig {
      * Verificar si la API key está configurada
      */
     fun isApiKeyConfigured(): Boolean {
-        return API_KEY != "TU_API_KEY_AQUI" &&
-                API_KEY != "c6808c99" && // key de ejemplo
-                API_KEY.isNotBlank()
+        return API_KEY.isNotBlank() &&
+                API_KEY != "YOUR_API_KEY_HERE" &&
+                API_KEY != "TU_API_KEY_AQUI" &&
+                API_KEY.length > 5 // Una API key real debería ser más larga
     }
 
     /**
@@ -238,6 +247,17 @@ object JamendoConfig {
             else -> "Error cargando música: ${error.message ?: "Desconocido"}"
         }
     }
+
+    /**
+     * Log seguro de la API key (solo muestra los primeros caracteres)
+     */
+    fun getApiKeyForLogging(): String {
+        return if (API_KEY.length > 4) {
+            "${API_KEY.take(4)}***"
+        } else {
+            "***"
+        }
+    }
 }
 
 /**
@@ -258,6 +278,7 @@ data class JamendoStats(
             appendLine("• Canciones cargadas: $totalSongsLoaded")
             appendLine("• Tiempo respuesta promedio: ${averageResponseTime}ms")
             appendLine("• API Key configurada: ${if (apiKeyStatus) "✅" else "❌"}")
+            appendLine("• API Key: ${JamendoConfig.getApiKeyForLogging()}")
             if (popularGenres.isNotEmpty()) {
                 appendLine("• Géneros populares: ${popularGenres.take(3).joinToString(", ")}")
             }

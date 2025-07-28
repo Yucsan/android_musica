@@ -429,37 +429,19 @@ class MusicViewModel @Inject constructor(
     }
 
     /**
-     * Test manual de servicios
+     * Test manual de servicios con debug detallado
      */
     fun testServices() {
         viewModelScope.launch {
             try {
                 _isLoading.value = true
-                _debugInfo.value = "🧪 Probando servicios..."
+                _debugInfo.value = "🧪 Iniciando test comparativo..."
 
-                val jamendoWorking = jamendoService.testConnection()
+                // Test comparativo para debuggear el problema
+                val debugResult = jamendoService.testWithHardcodedKey()
+                _debugInfo.value = debugResult
 
-                val message = buildString {
-                    appendLine("🧪 Test de servicios:")
-                    appendLine("• Jamendo: ${if (jamendoWorking) "✅ OK" else "❌ Demo"}")
-                    appendLine()
-                    appendLine("🎵 MusicPlayer:")
-                    val player = musicPlayer
-                    if (player != null) {
-                        appendLine("• Conectado: ✅")
-                        appendLine("• Servicio listo: ${if (player.isServiceReady()) "✅" else "❌"}")
-                    } else {
-                        appendLine("• Conectado: ❌")
-                    }
-                    appendLine()
-                    appendLine("📊 Estadísticas:")
-                    appendLine("• Trending: ${_trendingSongs.value.size}")
-                    appendLine("• Búsqueda: ${_searchResults.value.size}")
-                    appendLine("• Géneros: ${_availableGenres.value.size}")
-                }
-
-                _debugInfo.value = message.trim()
-                Log.d(TAG, message)
+                Log.d(TAG, debugResult)
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error en test", e)

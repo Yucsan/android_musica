@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -19,6 +21,18 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // ✅ SOLUCIÓN DEFINITIVA SIN PROBLEMAS DE IMPORT
+        val localPropertiesFile = rootProject.file("local.properties")
+        val jamendoApiKey = if (localPropertiesFile.exists()) {
+            val properties = Properties()
+            localPropertiesFile.inputStream().use { properties.load(it) }
+            properties.getProperty("jamendo.api.key") ?: "YOUR_API_KEY_HERE"
+        } else {
+            "YOUR_API_KEY_HERE"
+        }
+
+        buildConfigField("String", "JAMENDO_API_KEY", "\"$jamendoApiKey\"")
+
         // Configuración para yt-dlp
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
@@ -32,6 +46,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+
+        debug {
+            buildConfigField("Boolean", "DEBUG_LOGS", "true")
         }
     }
 
@@ -47,6 +65,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true // ✅ IMPORTANTE: Habilitar BuildConfig
     }
 
     // ✅ UN SOLO BLOQUE PACKAGING
@@ -72,7 +91,7 @@ android {
 
 dependencies {
     // ============================================================================
-    // ANDROID CORE (sin cambios)
+    // ANDROID CORE
     // ============================================================================
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
@@ -118,14 +137,13 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
 
     // ============================================================================
-    // NEWPIPE (mantener como principal)
+    // NEWPIPE (mantener como fallback)
     // ============================================================================
     implementation("com.github.teamnewpipe:newpipeextractor:v0.24.2")
 
     // ============================================================================
-    // YT-DLP CORREGIDO - VERSIÓN MÁS ESTABLE
+    // YT-DLP (mantener como fallback)
     // ============================================================================
-    // Usamos una versión específica que sabemos que funciona mejor
     implementation("com.github.yausername.youtubedl-android:library:0.15.0")
     implementation("com.github.yausername.youtubedl-android:ffmpeg:0.15.0")
 
@@ -147,7 +165,7 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.0.4")
 
     // ============================================================================
-    // DEPENDENCIAS DEL CATÁLOGO (sin cambios)
+    // DEPENDENCIAS DEL CATÁLOGO
     // ============================================================================
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
