@@ -54,10 +54,6 @@ Un reproductor multimedia moderno y personalizable para Android, diseñado como 
 <img src="imagenes/reproductor2.jpg" alt="Lista" width="300"/>
 *Interfaz principal con biblioteca de música y navegación*
 
-
-
-> **Nota**: Todas las capturas de pantalla están disponibles en la carpeta `imagenes/` del repositorio.
-
 ## 🚀 Instalación y Configuración
 
 ### Prerrequisitos
