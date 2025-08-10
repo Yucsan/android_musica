@@ -48,15 +48,15 @@ Un reproductor multimedia moderno y personalizable para Android, diseñado como 
 ## 📱 Capturas de Pantalla
 
 ### Pantalla Principal
-![Pantalla Principal](imagenes/pantalla_principal.png)
+![Pantalla Principal](imagenes/reproductor1.jpg)
 *Interfaz principal con biblioteca de música y navegación*
 
 ### Reproductor en Acción
-![Reproductor](imagenes/reproductor_activo.png)
+![Reproductor](imagenes/reproductor2.jpg)
 *Vista del reproductor con controles de reproducción y información de la pista*
 
 ### Lista de Reproducción
-![Lista](imagenes/lista_canciones.png)
+![Lista](imagenes/reproductor1.jpg)
 *Gestión de listas de reproducción y biblioteca musical*
 
 ### Configuraciones
